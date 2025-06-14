@@ -213,30 +213,45 @@ def download_pdf(driver, pdf_info, directory):
     """Downloads a single PDF from the given pdf_info to the specified directory."""
     pdf_url = pdf_info['url']
     filename_suggestion_base = pdf_info.get('filename_suggestion', 'untitled_document')
-    original_href = pdf_info.get('original_href')
-    filename = None
 
     try:
         logger.info(f"Attempting to navigate to PDF URL via Selenium: {pdf_url}")
         driver.get(pdf_url)
-        time.sleep(random.uniform(1, 3)) # Brief pause for page to load or CAPTCHA to appear
+        time.sleep(random.uniform(1, 3))  # Allow page or captcha to render
 
-        print("\n--- HUMAN INTERVENTION REQUIRED ---")
-        print(f"Navigated to: {pdf_url} (for docket item: {pdf_info.get('docket_number', 'N/A')}, title: {pdf_info.get('title', 'N/A')})")
-        print("Please check the Selenium browser window.")
-        print("If a CAPTCHA is present, please solve it.")
-        print(f"The PDF should then download automatically to: {directory}")
-        print(f"Please ensure it is saved as: {filename_suggestion_base}.pdf")
-        input("Press Enter here AFTER the PDF is saved, or if this link is not a downloadable PDF...")
+        page_source = driver.page_source.lower()
+        captcha_present = 'captcha' in page_source
 
-        # After user interaction, check if the file exists
-        filepath = os.path.join(directory, filename_suggestion_base + ".pdf")
-        if os.path.exists(filepath):
-            logger.info(f"User confirmed download of {filename_suggestion_base}.pdf to {filepath}")
+        if captcha_present:
+            print("\n--- HUMAN INTERVENTION REQUIRED ---")
+            print(
+                f"Navigated to: {pdf_url} (for docket item: {pdf_info.get('docket_number', 'N/A')}, title: {pdf_info.get('title', 'N/A')})"
+            )
+            print("Please solve the CAPTCHA in the Selenium browser window.")
+            print(
+                f"The PDF should then download automatically to: {directory} as {filename_suggestion_base}.pdf"
+            )
+            input("Press Enter here AFTER the CAPTCHA is solved and the PDF is saved...")
         else:
-            logger.warning(f"User continued, but file {filename_suggestion_base}.pdf was not found at {filepath}. Manual save might have failed or used a different name.")
-            return False # Indicate download was not confirmed by script
-        return True
+            logger.info("No CAPTCHA detected. Waiting briefly for automatic download...")
+            time.sleep(2)
+
+        # Verify the file exists after either automatic download or manual step
+        filepath = os.path.join(directory, filename_suggestion_base + ".pdf")
+        wait_time = 0
+        while wait_time < 30 and not os.path.exists(filepath):
+            time.sleep(1)
+            wait_time += 1
+
+        if os.path.exists(filepath):
+            logger.info(f"Confirmed download of {filename_suggestion_base}.pdf to {filepath}")
+            return True
+        else:
+            logger.warning(
+                f"Expected file {filename_suggestion_base}.pdf not found at {filepath}."
+            )
+            return False
+
     except Exception as e:
         logger.error(f"An unexpected error occurred while downloading {pdf_url}: {e}")
         return False
