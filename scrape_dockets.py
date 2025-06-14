@@ -1,7 +1,5 @@
 import os
-import requests
-from bs4 import BeautifulSoup
-from urllib.parse import urljoin, urlparse, parse_qs
+from urllib.parse import urljoin
 import time
 import logging
 import random
@@ -193,18 +191,16 @@ def download_pdf(driver, pdf_info, directory):
     """Downloads a single PDF from the given pdf_info to the specified directory."""
     pdf_url = pdf_info['url']
     filename_suggestion_base = pdf_info.get('filename_suggestion', 'untitled_document')
-    original_href = pdf_info['original_href']
-    filename = None
 
     try:
         logger.info(f"Attempting to navigate to PDF URL via Selenium: {pdf_url}")
         driver.get(pdf_url)
         time.sleep(random.uniform(1, 3)) # Brief pause for page to load or CAPTCHA to appear
 
-        print(f"\n--- HUMAN INTERVENTION REQUIRED ---")
+        print("\n--- HUMAN INTERVENTION REQUIRED ---")
         print(f"Navigated to: {pdf_url} (for docket item: {pdf_info.get('docket_number', 'N/A')}, title: {pdf_info.get('title', 'N/A')})")
-        print(f"Please check the Selenium browser window.")
-        print(f"If a CAPTCHA is present, please solve it.")
+        print("Please check the Selenium browser window.")
+        print("If a CAPTCHA is present, please solve it.")
         print(f"The PDF should then download automatically to: {directory}")
         print(f"Please ensure it is saved as: {filename_suggestion_base}.pdf")
         input("Press Enter here AFTER the PDF is saved, or if this link is not a downloadable PDF...")
@@ -350,43 +346,53 @@ def main():
                 logger.error(f"Error clicking 'Next Page' button: {e}")
                 break
 
-    # PDF download logic is now moved inside the main try block
-    if not all_pdf_infos:
-        logger.warning("No suitable PDF links found after Selenium scraping.")
-        return # Restore return to exit if no PDFs found; finally will still execute.
-    else:
-        logger.info(f"--- Collected a total of {len(all_pdf_infos)} PDF links. Starting downloads. ---")
-        downloaded_count = 0
-        failed_count = 0
-        
-        # Deduplicate based on URL before downloading
-        unique_pdf_infos_to_download = []
-        seen_download_urls = set()
-        for pdf_info_item in all_pdf_infos:
-            if pdf_info_item['url'] not in seen_download_urls:
-                unique_pdf_infos_to_download.append(pdf_info_item)
-                seen_download_urls.add(pdf_info_item['url'])
-        
-        logger.info(f"After deduplication, {len(unique_pdf_infos_to_download)} unique PDFs to attempt downloading.")
-
-        if driver: # Ensure driver is still active for downloads
-            for i, pdf_info_item in enumerate(unique_pdf_infos_to_download):
-                if i > 0: 
-                    download_delay = random.uniform(3, 8)
-                    logger.info(f"Waiting for {download_delay:.2f} seconds before next download...")
-                    time.sleep(download_delay)
-                
-                if download_pdf(driver, pdf_info_item, DOWNLOAD_DIR):
-                    downloaded_count += 1
-                else:
-                    failed_count += 1
-            
-            logger.info("--- Download Summary ---")
-            logger.info(f"Successfully downloaded/already existed: {downloaded_count} PDFs")
-            logger.info(f"Failed to download: {failed_count} PDFs")
-            logger.info(f"All files are located in: {DOWNLOAD_DIR}")
+        # PDF download logic is now moved inside the main try block
+        if not all_pdf_infos:
+            logger.warning("No suitable PDF links found after Selenium scraping.")
+            return  # Exit early if no PDFs found; finally block will still execute.
         else:
-            logger.error("WebDriver was not available for the download phase. Skipping downloads.")
+            logger.info(
+                f"--- Collected a total of {len(all_pdf_infos)} PDF links. Starting downloads. ---"
+            )
+            downloaded_count = 0
+            failed_count = 0
+
+            # Deduplicate based on URL before downloading
+            unique_pdf_infos_to_download = []
+            seen_download_urls = set()
+            for pdf_info_item in all_pdf_infos:
+                if pdf_info_item['url'] not in seen_download_urls:
+                    unique_pdf_infos_to_download.append(pdf_info_item)
+                    seen_download_urls.add(pdf_info_item['url'])
+
+            logger.info(
+                f"After deduplication, {len(unique_pdf_infos_to_download)} unique PDFs to attempt downloading."
+            )
+
+            if driver:  # Ensure driver is still active for downloads
+                for i, pdf_info_item in enumerate(unique_pdf_infos_to_download):
+                    if i > 0:
+                        download_delay = random.uniform(3, 8)
+                        logger.info(
+                            f"Waiting for {download_delay:.2f} seconds before next download..."
+                        )
+                        time.sleep(download_delay)
+
+                    if download_pdf(driver, pdf_info_item, DOWNLOAD_DIR):
+                        downloaded_count += 1
+                    else:
+                        failed_count += 1
+
+                logger.info("--- Download Summary ---")
+                logger.info(
+                    f"Successfully downloaded/already existed: {downloaded_count} PDFs"
+                )
+                logger.info(f"Failed to download: {failed_count} PDFs")
+                logger.info(f"All files are located in: {DOWNLOAD_DIR}")
+            else:
+                logger.error(
+                    "WebDriver was not available for the download phase. Skipping downloads."
+                )
 
     except Exception as e:
         logger.error(f"An error occurred during Selenium processing or downloads: {e}")
