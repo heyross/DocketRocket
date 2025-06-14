@@ -220,6 +220,11 @@ def download_pdf(driver, pdf_info, directory):
 
     global captcha_solved
     try:
+        filepath = os.path.join(directory, filename_suggestion_base + ".pdf")
+        if os.path.exists(filepath):
+            logger.info(f"File already exists, skipping download: {filepath}")
+            return True
+
         logger.info(f"Attempting to navigate to PDF URL via Selenium: {pdf_url}")
         driver.get(pdf_url)
         time.sleep(random.uniform(1, 3))  # Allow page or captcha to render
@@ -246,7 +251,6 @@ def download_pdf(driver, pdf_info, directory):
             time.sleep(2)
 
         # Verify the file exists after either automatic download or manual step
-        filepath = os.path.join(directory, filename_suggestion_base + ".pdf")
         wait_time = 0
         while wait_time < 30 and not os.path.exists(filepath):
             time.sleep(1)
@@ -376,16 +380,20 @@ def main():
                     new_infos.append(info)
                     seen_download_urls.add(info['url'])
 
-            if not new_infos:
-                logger.info("No new PDF links found on this page. Assuming end of pagination.")
+            docket_1_present = any(info.get('docket_number') == '1' for info in page_pdf_infos)
+
+            if new_infos:
+                all_pdf_infos.extend(new_infos)
+                save_scraped_links(LINKS_FILE, all_pdf_infos)
+                logger.info(
+                    f"Found {len(new_infos)} new PDF links on page {current_page_num}. Total unique links so far: {len(all_pdf_infos)}"
+                )
+            else:
+                logger.info(f"No new PDF links found on page {current_page_num}.")
+
+            if not new_infos and docket_1_present:
+                logger.info("Reached docket #1 with no new PDFs. Stopping pagination.")
                 break
-
-            all_pdf_infos.extend(new_infos)
-            save_scraped_links(LINKS_FILE, all_pdf_infos)
-
-            logger.info(
-                f"Found {len(new_infos)} new PDF links on page {current_page_num}. Total unique links so far: {len(all_pdf_infos)}"
-            )
 
             # --- Pagination: Find and click 'Next' button --- 
             # !!! Placeholder: Update this selector for the 'Next Page' button !!!
