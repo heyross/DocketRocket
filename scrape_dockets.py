@@ -1,4 +1,5 @@
 import os
+import json
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse, parse_qs
@@ -18,6 +19,7 @@ from selenium.webdriver.chrome.options import Options
 BASE_URL = "https://restructuring.ra.kroll.com" 
 PAGE_URL = "https://restructuring.ra.kroll.com/bbby/Home-DocketInfo"
 DOWNLOAD_DIR = r"C:\Users\Ross Brown\OneDrive\DocketRocketSource"
+LINKS_FILE = "scraped_links.json"
 
 # --- Selenium WebDriver Configuration ---
 driver_path = r"D:\chromedriver-win64\chromedriver.exe" 
@@ -73,6 +75,24 @@ def create_download_directory(directory):
         os.makedirs(directory)
     else:
         logger.info(f"Directory already exists: {directory}")
+
+def load_scraped_links(filename):
+    """Load previously scraped PDF info from a JSON file."""
+    if os.path.exists(filename):
+        try:
+            with open(filename, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Failed to load existing link file {filename}: {e}")
+    return []
+
+def save_scraped_links(filename, links):
+    """Persist scraped PDF info to a JSON file."""
+    try:
+        with open(filename, "w", encoding="utf-8") as f:
+            json.dump(links, f, indent=2)
+    except Exception as e:
+        logger.error(f"Failed to save scraped links to {filename}: {e}")
 
 # def fetch_api_page_data(session, page_num, rows_per_page):
 #     """(Obsolete with Selenium) Fetches a single page of docket data from the Kroll API."""
@@ -286,8 +306,10 @@ def extract_pdf_infos_from_selenium_page(driver):
 def main():
     """Main function to orchestrate the PDF downloading process using Selenium."""
     create_download_directory(DOWNLOAD_DIR)
-    
-    all_pdf_infos = []
+
+    # Load any previously collected links so the scraper can resume work
+    all_pdf_infos = load_scraped_links(LINKS_FILE)
+    seen_download_urls = set(info.get('url') for info in all_pdf_infos)
     # current_page and total_pages were for API pagination, not directly used by Selenium in the same way
     # Selenium pagination is handled by clicking 'Next' until no more pages.
 
@@ -323,8 +345,23 @@ def main():
         while True:
             logger.info(f"Processing page {current_page_num}...")
             page_pdf_infos = extract_pdf_infos_from_selenium_page(driver)
-            all_pdf_infos.extend(page_pdf_infos)
-            logger.info(f"Found {len(page_pdf_infos)} PDF links on page {current_page_num}. Total unique links so far: {len(all_pdf_infos)}")
+
+            new_infos = []
+            for info in page_pdf_infos:
+                if info['url'] not in seen_download_urls:
+                    new_infos.append(info)
+                    seen_download_urls.add(info['url'])
+
+            if not new_infos:
+                logger.info("No new PDF links found on this page. Assuming end of pagination.")
+                break
+
+            all_pdf_infos.extend(new_infos)
+            save_scraped_links(LINKS_FILE, all_pdf_infos)
+
+            logger.info(
+                f"Found {len(new_infos)} new PDF links on page {current_page_num}. Total unique links so far: {len(all_pdf_infos)}"
+            )
 
             # --- Pagination: Find and click 'Next' button --- 
             # !!! Placeholder: Update this selector for the 'Next Page' button !!!
@@ -363,11 +400,11 @@ def main():
 
             # Deduplicate based on URL before downloading
             unique_pdf_infos_to_download = []
-            seen_download_urls = set()
+            seen_download_urls_download = set()
             for pdf_info_item in all_pdf_infos:
-                if pdf_info_item['url'] not in seen_download_urls:
+                if pdf_info_item['url'] not in seen_download_urls_download:
                     unique_pdf_infos_to_download.append(pdf_info_item)
-                    seen_download_urls.add(pdf_info_item['url'])
+                    seen_download_urls_download.add(pdf_info_item['url'])
 
             logger.info(
                 f"After deduplication, {len(unique_pdf_infos_to_download)} unique PDFs to attempt downloading."
@@ -401,6 +438,8 @@ def main():
     except Exception as e:
         logger.error(f"An error occurred during Selenium processing or downloads: {e}")
     finally:
+        # Persist collected links even if an error occurred
+        save_scraped_links(LINKS_FILE, all_pdf_infos)
         if driver:
             logger.info("Closing Selenium WebDriver.")
             driver.quit()
