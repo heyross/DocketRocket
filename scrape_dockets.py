@@ -209,11 +209,16 @@ def save_scraped_links(filename, links):
 #     logger.info(f"Extracted {len(pdf_infos)} non-CAPTCHA PDF links from API response page.")
 #     return pdf_infos
 
+# Track whether we've already manually solved the CAPTCHA during this run
+captcha_solved = False
+
+
 def download_pdf(driver, pdf_info, directory):
     """Downloads a single PDF from the given pdf_info to the specified directory."""
     pdf_url = pdf_info['url']
     filename_suggestion_base = pdf_info.get('filename_suggestion', 'untitled_document')
 
+    global captcha_solved
     try:
         logger.info(f"Attempting to navigate to PDF URL via Selenium: {pdf_url}")
         driver.get(pdf_url)
@@ -222,7 +227,7 @@ def download_pdf(driver, pdf_info, directory):
         page_source = driver.page_source.lower()
         captcha_present = 'captcha' in page_source
 
-        if captcha_present:
+        if captcha_present and not captcha_solved:
             print("\n--- HUMAN INTERVENTION REQUIRED ---")
             print(
                 f"Navigated to: {pdf_url} (for docket item: {pdf_info.get('docket_number', 'N/A')}, title: {pdf_info.get('title', 'N/A')})"
@@ -232,8 +237,12 @@ def download_pdf(driver, pdf_info, directory):
                 f"The PDF should then download automatically to: {directory} as {filename_suggestion_base}.pdf"
             )
             input("Press Enter here AFTER the CAPTCHA is solved and the PDF is saved...")
+            captcha_solved = True
         else:
-            logger.info("No CAPTCHA detected. Waiting briefly for automatic download...")
+            if captcha_present and captcha_solved:
+                logger.info("CAPTCHA text detected but already solved earlier; proceeding without prompt.")
+            else:
+                logger.info("No CAPTCHA detected. Waiting briefly for automatic download...")
             time.sleep(2)
 
         # Verify the file exists after either automatic download or manual step
