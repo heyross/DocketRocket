@@ -1,5 +1,7 @@
 import os
-from urllib.parse import urljoin
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin, urlparse, parse_qs
 import time
 import logging
 import random
@@ -191,6 +193,8 @@ def download_pdf(driver, pdf_info, directory):
     """Downloads a single PDF from the given pdf_info to the specified directory."""
     pdf_url = pdf_info['url']
     filename_suggestion_base = pdf_info.get('filename_suggestion', 'untitled_document')
+    original_href = pdf_info.get('original_href')
+    filename = None
 
     try:
         logger.info(f"Attempting to navigate to PDF URL via Selenium: {pdf_url}")
